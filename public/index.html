@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kitchen Screen</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #111418; color: #f1f3f5; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #2a2f36; }
+    h1 { margin: 0; font-size: 20px; }
+    .live { font-size: 13px; color: #8b949e; }
+    .live.error { color: #ff6b6b; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 24px; }
+    .empty { padding: 60px 24px; text-align: center; color: #8b949e; font-size: 18px; }
+    .card { background: #1b1f25; border: 1px solid #2a2f36; border-left-width: 6px; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .card.new { border-left-color: #ff6b6b; }
+    .card.preparing { border-left-color: #fcc419; }
+    .card.ready { border-left-color: #51cf66; }
+    .top { display: flex; justify-content: space-between; align-items: baseline; }
+    .id { font-size: 20px; font-weight: 700; }
+    .time { font-size: 13px; color: #8b949e; }
+    .meta { font-size: 14px; color: #c1c7cd; }
+    .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: #2a2f36; text-transform: uppercase; letter-spacing: 0.04em; }
+    ul { margin: 0; padding: 0; list-style: none; border-top: 1px solid #2a2f36; border-bottom: 1px solid #2a2f36; }
+    li { display: flex; gap: 10px; padding: 8px 0; font-size: 17px; }
+    li .qty { font-weight: 700; min-width: 28px; }
+    .total { font-size: 14px; color: #8b949e; }
+    button { cursor: pointer; border: 0; border-radius: 8px; padding: 12px; font-size: 16px; font-weight: 600; background: #3b82f6; color: white; }
+    button:hover { background: #2563eb; }
+    .card.ready button { background: #2f9e44; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const NEXT = {
+      new: { label: "Start preparing", next: "preparing" },
+      preparing: { label: "Mark ready", next: "ready" },
+      ready: { label: "Complete", next: "done" },
+    };
+
+    const timeAgo = (iso) => {
+      const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+      return m < 1 ? "just now" : `${m} min ago`;
+    };
+
+    function OrderCard({ order, onAdvance }) {
+      const action = NEXT[order.status];
+      return (
+        <div className={`card ${order.status}`}>
+          <div className="top">
+            <span className="id">{order.orderId}</span>
+            <span className="time">{timeAgo(order.createdAt)}</span>
+          </div>
+          <div className="meta">
+            {order.customerName} · <span className="badge">{order.orderType}</span>{" "}
+            <span className="badge">{order.status}</span>
+          </div>
+          <ul>
+            {order.items.map((item) => (
+              <li key={item.itemId}>
+                <span className="qty">{item.qty}×</span>
+                <span>{item.name}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="total">Total: ${order.total.toFixed(2)}</div>
+          <button onClick={() => onAdvance(order)}>{action.label}</button>
+        </div>
+      );
+    }
+
+    function App() {
+      const [orders, setOrders] = useState([]);
+      const [error, setError] = useState(false);
+
+      const load = async () => {
+        try {
+          const res = await fetch("/api/orders");
+          if (!res.ok) throw new Error();
+          setOrders(await res.json());
+          setError(false);
+        } catch {
+          setError(true);
+        }
+      };
+
+      // Refresh every 2 seconds
+      useEffect(() => {
+        load();
+        const t = setInterval(load, 2000);
+        return () => clearInterval(t);
+      }, []);
+
+      const advance = async (order) => {
+        await fetch(`/api/orders/${order.orderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: NEXT[order.status].next }),
+        });
+        load();
+      };
+
+      return (
+        <>
+          <header>
+            <h1>Kitchen Screen</h1>
+            <span className={`live ${error ? "error" : ""}`}>
+              {error ? "● Connection lost" : `● Live · ${orders.length} active`}
+            </span>
+          </header>
+          {orders.length === 0 ? (
+            <div className="empty">No active orders. Waiting for calls…</div>
+          ) : (
+            <div className="grid">
+              {orders.map((o) => (
+                <OrderCard key={o.orderId} order={o} onAdvance={advance} />
+              ))}
+            </div>
+          )}
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
